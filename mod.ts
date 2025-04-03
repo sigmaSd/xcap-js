@@ -172,8 +172,6 @@ export async function captureMonitor(
   // The FFI call is potentially blocking, so use await if nonblocking: true
   const rawStruct = await lib.symbols.capture_monitor_image(monitorIndex);
 
-  console.log("Raw struct:", rawStruct);
-
   // Manual extraction from the struct without byte_type
   // In FFI structs are returned as TypedArrays
   const structData = new DataView(rawStruct.buffer);
@@ -184,13 +182,6 @@ export async function captureMonitor(
   const lenValue = Number(structData.getBigUint64(8, true));
   const width = structData.getUint32(16, true);
   const height = structData.getUint32(20, true);
-
-  console.log("Extracted values:", {
-    dataPtr: dataPtr ? "valid" : "null",
-    lenValue,
-    width,
-    height,
-  });
 
   if (dataPtr === null || lenValue === 0) {
     // Need to free the struct, but with null data pointer
@@ -252,11 +243,44 @@ export async function savePPM(
     fileData.set(rgbData, headerBytes.length);
 
     // Write the PPM file
-    await Deno.writeFile(path.replace(/\.png$/, ".ppm"), fileData);
+    await Deno.writeFile(path, fileData);
     console.log(`Image saved as PPM to ${path.replace(/\.png$/, ".ppm")}`);
   } catch (e) {
     console.error(`Failed to save image: ${e}`);
     throw e;
+  }
+}
+
+/**
+ * Helper function to save captured image data to a PNG file.
+ * Requires --allow-write permission.
+ * Uses the @img/png library for PNG encoding.
+ *
+ * @param image The captured image data.
+ * @param path The file path to save the PNG to.
+ */
+export async function savePng(
+  image: CapturedImageData,
+  path: string,
+): Promise<void> {
+  try {
+    // Import the PNG encoder
+    const { encodePNG } = await import("jsr:@img/png@0.1.2");
+
+    // Encode the raw pixel data to PNG format
+    const pngData = await encodePNG(image.data, {
+      width: image.width,
+      height: image.height,
+      compression: 0, // Maximum compression (0-9)
+      filter: 0, // No filtering
+      interlace: 0, // No interlacing
+    });
+
+    // Write the PNG data to file
+    await Deno.writeFile(path, pngData);
+    console.log(`Image saved as PNG to ${path}`);
+  } catch (e) {
+    console.error(`Failed to save PNG: ${e}`);
   }
 }
 
@@ -272,8 +296,15 @@ if (import.meta.main) {
       `Captured ${img.width}x${img.height} image (${img.data.byteLength} bytes)`,
     );
 
-    const path = `./screenshot-${Date.now()}.ppm`;
-    console.log(`Saving to ${path}...`);
-    await savePPM(img, path);
+    {
+      const path = `./screenshot-${Date.now()}.ppm`;
+      console.log(`Saving to ${path}...`);
+      await savePPM(img, path);
+    }
+    {
+      const path = `./screenshot-${Date.now()}.png`;
+      console.log(`Saving to ${path}...`);
+      await savePng(img, path);
+    }
   }
 }
