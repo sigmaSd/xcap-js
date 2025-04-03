@@ -28,7 +28,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Build
-        run: cargo build --release --manifest-path src-rust/Cargo.toml
+        run: cargo build --release
 
       - name: Correct MacOS lib name
         if: runner.os == 'MacOS'
