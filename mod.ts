@@ -1,3 +1,4 @@
+import { library } from "./ffi.ts";
 /**
  * Represents information about a display monitor.
  */
@@ -26,102 +27,12 @@ export interface CapturedImageData {
   height: number;
 }
 
-// --- FFI Definition ---
-
-const LIB_SUFFIX: Partial<Record<typeof Deno.build.os, string>> = {
-  darwin: "dylib",
-  linux: "so",
-  windows: "dll",
-};
-
-const LIB_PREFIX: Partial<Record<typeof Deno.build.os, string>> = {
-  darwin: "lib",
-  linux: "lib",
-  windows: "",
-};
-
-const libName = `${LIB_PREFIX[Deno.build.os]}capture_ffi.${
-  LIB_SUFFIX[Deno.build.os]
-}`;
-// Assume the library is in the same directory or adjust path as needed
-const libPath = new URL(libName, import.meta.url).pathname;
-// Handle Windows path quirk if necessary: Deno expects URL path format.
-// If libPath starts with /C:/ on windows, remove the leading /
-const correctedLibPath = Deno.build.os === "windows" && libPath.startsWith("/")
-  ? libPath.substring(1)
-  : libPath;
-
-// Define the C struct for Deno FFI
-const CAPTURED_IMAGE_STRUCT_DEF = {
-  struct: [
-    "pointer", // data: *mut u8
-    "usize", // len: size_t
-    "u32", // width: c_uint
-    "u32", // height: c_uint
-  ],
-} as const;
-
-const symbols = {
-  capture_monitor_count: {
-    parameters: [],
-    result: "usize",
-  },
-  capture_monitor_name: {
-    parameters: ["usize"],
-    result: "pointer", // *mut c_char
-  },
-  capture_monitor_id: {
-    parameters: ["usize"],
-    result: "u32", // c_uint
-  },
-  capture_monitor_width: {
-    parameters: ["usize"],
-    result: "u32", // c_uint
-  },
-  capture_monitor_height: {
-    parameters: ["usize"],
-    result: "u32", // c_uint
-  },
-  capture_monitor_image: {
-    parameters: ["usize"],
-    result: CAPTURED_IMAGE_STRUCT_DEF, // Our struct definition
-    nonblocking: true, // Capture can take time
-  },
-  capture_free_string: {
-    parameters: ["pointer"], // *mut c_char
-    result: "void",
-  },
-  capture_free_image: {
-    parameters: [CAPTURED_IMAGE_STRUCT_DEF], // Pass the struct by value
-    result: "void",
-  },
-  capture_last_error_message: {
-    parameters: [],
-    result: "pointer", // *const c_char
-  },
-} as const;
-
-// Load the library and define symbols
-// Use try/catch for better error reporting if lib is missing
-let lib: Deno.DynamicLibrary<typeof symbols>;
-try {
-  lib = Deno.dlopen(correctedLibPath, symbols);
-} catch (e) {
-  console.error(`Error loading library: ${libName} from ${correctedLibPath}`);
-  console.error(
-    "Ensure the compiled Rust library (capture-ffi) is in the correct location.",
-  );
-  console.error(e);
-  // Re-throw or provide dummy functions if needed
-  throw e;
-}
-
 /**
  * Retrieves the last error message from the native library.
  * @returns The error message, or null if there's no error.
  */
 export function getLastError(): string | null {
-  const ptr = lib.symbols.capture_last_error_message();
+  const ptr = library.symbols.capture_last_error_message();
   if (ptr === null) {
     return null;
   }
@@ -136,7 +47,7 @@ export function getLastError(): string | null {
  * @throws Error if the native library fails to retrieve monitors.
  */
 export function getMonitors(): MonitorInfo[] {
-  const count = lib.symbols.capture_monitor_count();
+  const count = library.symbols.capture_monitor_count();
   if (count === 0n) {
     const error = getLastError();
     if (error) {
@@ -150,7 +61,7 @@ export function getMonitors(): MonitorInfo[] {
 
   const monitors: MonitorInfo[] = [];
   for (let i = 0n; i < count; i++) {
-    const namePtr = lib.symbols.capture_monitor_name(i);
+    const namePtr = library.symbols.capture_monitor_name(i);
     let name = "Unknown"; // Default name
     if (namePtr !== null) {
       try {
@@ -160,7 +71,7 @@ export function getMonitors(): MonitorInfo[] {
         console.error(`Error reading name for monitor ${i}:`, e);
       } finally {
         // IMPORTANT: Free the string allocated by Rust
-        lib.symbols.capture_free_string(namePtr);
+        library.symbols.capture_free_string(namePtr);
       }
     } else {
       const error = getLastError();
@@ -173,9 +84,9 @@ export function getMonitors(): MonitorInfo[] {
       }
     }
 
-    const id = lib.symbols.capture_monitor_id(i);
-    const width = lib.symbols.capture_monitor_width(i);
-    const height = lib.symbols.capture_monitor_height(i);
+    const id = library.symbols.capture_monitor_id(i);
+    const width = library.symbols.capture_monitor_width(i);
+    const height = library.symbols.capture_monitor_height(i);
 
     monitors.push({ id, name, index: i, width, height });
   }
@@ -193,7 +104,7 @@ export async function captureMonitor(
   monitorIndex: bigint,
 ): Promise<CapturedImageData> {
   // The FFI call is potentially blocking, so use await if nonblocking: true
-  const rawStruct = await lib.symbols.capture_monitor_image(monitorIndex);
+  const rawStruct = await library.symbols.capture_monitor_image(monitorIndex);
 
   // Manual extraction from the struct without byte_type
   // In FFI structs are returned as TypedArrays
@@ -208,7 +119,7 @@ export async function captureMonitor(
 
   if (dataPtr === null || lenValue === 0) {
     // Need to free the struct, but with null data pointer
-    lib.symbols.capture_free_image(rawStruct);
+    library.symbols.capture_free_image(rawStruct);
     const error = getLastError();
     throw new Error(
       `Failed to capture image for monitor index ${monitorIndex}: ${
@@ -227,7 +138,7 @@ export async function captureMonitor(
     console.error("Error reading image data buffer:", e);
   } finally {
     // IMPORTANT: Free the image buffer allocated by Rust
-    lib.symbols.capture_free_image(rawStruct);
+    library.symbols.capture_free_image(rawStruct);
   }
 
   if (!imageData) {

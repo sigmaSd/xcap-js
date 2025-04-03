@@ -1,0 +1,67 @@
+name: Release libs
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Release libs
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          [
+            ubuntu-latest,
+            ubuntu-24.04-arm,
+            windows-latest,
+            macos-13,
+            macos-latest,
+          ]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release --manifest-path src-rust/Cargo.toml
+
+      - name: Correct MacOS lib name
+        if: runner.os == 'MacOS'
+        run: |
+          mv src-rust/target/release/libxcap.dylib libxcap_$(uname -m).dylib
+
+      - name: Upload MacOS lib
+        if: runner.os == 'MacOS'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: libxcap_*.dylib
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
+
+      - name: Correct linux lib name
+        if: runner.os == 'Linux'
+        run: |
+          mv src-rust/target/release/libxcap.so libxcap_$(uname -m).so
+
+      - name: Upload Linux lib
+        if: runner.os == 'Linux'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: libxcap_*.so
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
+
+      - name: Upload Windows lib
+        if: runner.os == 'Windows'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: src-rust/target/release/xcap.dll
+          tag: ${{ github.ref }}
+          overwrite: true
