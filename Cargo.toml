@@ -1,0 +1,15 @@
+
+# capture-ffi/Cargo.toml
+[package]
+name = "capture-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"] # Compile to a dynamic library (.so, .dll, .dylib)
+
+[dependencies]
+xcap = "0.1.0"     # Use an appropriate version
+libc = "0.2"
+fs_extra = "1.3.0" # Keep if needed for path normalization, though maybe handle in Deno
+image = "0.25.6"
