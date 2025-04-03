@@ -1,8 +1,7 @@
-use image::EncodableLayout;
 // capture-ffi/src/lib.rs
 use libc::{c_char, c_uint, size_t};
 use std::{cell::RefCell, ffi::CString, ptr, slice};
-use xcap::Monitor; // Added image::Image
+use xcap::{image::EncodableLayout, Monitor}; // Added image::Image
 
 // --- Data Structures for FFI ---
 
