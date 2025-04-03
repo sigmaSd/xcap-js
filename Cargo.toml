@@ -1,7 +1,7 @@
 
 # capture-ffi/Cargo.toml
 [package]
-name = "capture-ffi"
+name = "xcap-c-api"
 version = "0.1.0"
 edition = "2021"
 

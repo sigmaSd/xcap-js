@@ -1,5 +1,5 @@
 import * as plug from "jsr:@denosaurs/plug@1.0.6";
-import metadata from "./deno.json" with { type: "json" };
+import metadata from "../deno.json" with { type: "json" };
 
 export const library = await instantiate();
 
@@ -54,7 +54,7 @@ async function instantiate() {
     },
   } as const;
 
-  const name = "xcap";
+  const name = "xcap_c_api";
   // NOTE: replace this url with the correct repo url
   const url =
     `https://github.com/sigmaSd/xcap-js/releases/download/${metadata.version}`;
