@@ -95,6 +95,10 @@ const symbols = {
     parameters: [CAPTURED_IMAGE_STRUCT_DEF], // Pass the struct by value
     result: "void",
   },
+  capture_last_error_message: {
+    parameters: [],
+    result: "pointer", // *const c_char
+  },
 } as const;
 
 // Load the library and define symbols
@@ -112,6 +116,18 @@ try {
   throw e;
 }
 
+/**
+ * Retrieves the last error message from the native library.
+ * @returns The error message, or null if there's no error.
+ */
+export function getLastError(): string | null {
+  const ptr = lib.symbols.capture_last_error_message();
+  if (ptr === null) {
+    return null;
+  }
+  return new Deno.UnsafePointerView(ptr).getCString();
+}
+
 // --- Public API ---
 
 /**
@@ -122,10 +138,12 @@ try {
 export function getMonitors(): MonitorInfo[] {
   const count = lib.symbols.capture_monitor_count();
   if (count === 0n) {
-    // Could be no monitors or an error in the FFI layer
-    // Check FFI error logs if necessary
+    const error = getLastError();
+    if (error) {
+      throw new Error(`Failed to get monitors: ${error}`);
+    }
     console.warn(
-      "getMonitors: capture_monitor_count returned 0. No monitors detected or FFI error.",
+      "getMonitors: capture_monitor_count returned 0. No monitors detected.",
     );
     return [];
   }
@@ -145,9 +163,14 @@ export function getMonitors(): MonitorInfo[] {
         lib.symbols.capture_free_string(namePtr);
       }
     } else {
-      console.warn(
-        `getMonitors: capture_monitor_name returned null for index ${i}`,
-      );
+      const error = getLastError();
+      if (error) {
+        console.warn(`Monitor ${i} name error: ${error}`);
+      } else {
+        console.warn(
+          `getMonitors: capture_monitor_name returned null for index ${i}`,
+        );
+      }
     }
 
     const id = lib.symbols.capture_monitor_id(i);
@@ -186,8 +209,11 @@ export async function captureMonitor(
   if (dataPtr === null || lenValue === 0) {
     // Need to free the struct, but with null data pointer
     lib.symbols.capture_free_image(rawStruct);
+    const error = getLastError();
     throw new Error(
-      `Failed to capture image for monitor index ${monitorIndex}. Null data or zero length.`,
+      `Failed to capture image for monitor index ${monitorIndex}: ${
+        error || "Null data or zero length"
+      }`,
     );
   }
 
@@ -281,6 +307,7 @@ export async function savePng(
     console.log(`Image saved as PNG to ${path}`);
   } catch (e) {
     console.error(`Failed to save PNG: ${e}`);
+    throw e;
   }
 }
 

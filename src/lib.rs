@@ -1,7 +1,7 @@
 use image::EncodableLayout;
 // capture-ffi/src/lib.rs
 use libc::{c_char, c_uint, size_t};
-use std::{ffi::CString, ptr, slice};
+use std::{cell::RefCell, ffi::CString, ptr, slice};
 use xcap::Monitor; // Added image::Image
 
 // --- Data Structures for FFI ---
@@ -22,21 +22,23 @@ pub struct CapturedImage {
 
 // --- Helper for Error Handling (Optional but Recommended) ---
 // Store the last error message
-// thread_local! {
-//     static LAST_ERROR: std::cell::RefCell<Option<CString>> = std::cell::RefCell::new(None);
-// }
-// fn set_last_error(err: String) {
-//     LAST_ERROR.with(|cell| {
-//         *cell.borrow_mut() = Some(CString::new(err).unwrap_or_else(|_| CString::new("Failed to create error message").unwrap()));
-//     });
-// }
-// #[no_mangle]
-// pub extern "C" fn capture_last_error_message() -> *const c_char {
-//     LAST_ERROR.with(|cell| {
-//         cell.borrow().as_ref().map_or(ptr::null(), |s| s.as_ptr())
-//     })
-// }
-// For simplicity in this example, we'll stick to panicking or returning null/zero.
+thread_local! {
+    static LAST_ERROR: RefCell<Option<CString>> = RefCell::new(None);
+}
+
+fn set_last_error(err: String) {
+    LAST_ERROR.with(|cell| {
+        *cell.borrow_mut() = Some(
+            CString::new(err)
+                .unwrap_or_else(|_| CString::new("Failed to create error message").unwrap()),
+        );
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn capture_last_error_message() -> *const c_char {
+    LAST_ERROR.with(|cell| cell.borrow().as_ref().map_or(ptr::null(), |s| s.as_ptr()))
+}
 
 // --- Monitor Functions ---
 
@@ -47,8 +49,9 @@ pub extern "C" fn capture_monitor_count() -> size_t {
     match Monitor::all() {
         Ok(monitors) => monitors.len(),
         Err(e) => {
-            eprintln!("Error fetching monitors: {}", e);
-            // set_last_error(format!("Error fetching monitors: {}", e));
+            let err_msg = format!("Error fetching monitors: {}", e);
+            eprintln!("{}", err_msg);
+            set_last_error(err_msg);
             0
         }
     }
@@ -66,15 +69,23 @@ pub extern "C" fn capture_monitor_name(index: size_t) -> *mut c_char {
                 // Using monitor.name() which might return an OsString needing conversion
                 match CString::new(monitor.name()) {
                     Ok(c_string) => c_string.into_raw(),
-                    Err(_) => ptr::null_mut(), // Name contained null bytes
+                    Err(_) => {
+                        let err_msg = format!("Monitor name contains null bytes");
+                        set_last_error(err_msg);
+                        ptr::null_mut() // Name contained null bytes
+                    }
                 }
             } else {
                 // Index out of bounds
+                let err_msg = format!("Monitor index out of bounds: {}", index);
+                set_last_error(err_msg);
                 ptr::null_mut()
             }
         }
-        Err(_) => {
+        Err(e) => {
             // Error fetching monitors
+            let err_msg = format!("Error fetching monitors: {}", e);
+            set_last_error(err_msg);
             ptr::null_mut()
         }
     }
@@ -86,9 +97,19 @@ pub extern "C" fn capture_monitor_name(index: size_t) -> *mut c_char {
 #[no_mangle]
 pub extern "C" fn capture_monitor_id(index: size_t) -> c_uint {
     match Monitor::all() {
-        Ok(monitors) => monitors.get(index).map_or(0, |m| m.id()),
-        Err(_) => {
+        Ok(monitors) => {
+            if let Some(m) = monitors.get(index) {
+                m.id()
+            } else {
+                let err_msg = format!("Monitor index out of bounds: {}", index);
+                set_last_error(err_msg);
+                0
+            }
+        }
+        Err(e) => {
             // Error fetching monitors
+            let err_msg = format!("Error fetching monitors: {}", e);
+            set_last_error(err_msg);
             0
         }
     }
@@ -99,8 +120,20 @@ pub extern "C" fn capture_monitor_id(index: size_t) -> c_uint {
 #[no_mangle]
 pub extern "C" fn capture_monitor_width(index: size_t) -> c_uint {
     match Monitor::all() {
-        Ok(monitors) => monitors.get(index).map_or(0, |m| m.width()),
-        Err(_) => 0,
+        Ok(monitors) => {
+            if let Some(m) = monitors.get(index) {
+                m.width()
+            } else {
+                let err_msg = format!("Monitor index out of bounds: {}", index);
+                set_last_error(err_msg);
+                0
+            }
+        }
+        Err(e) => {
+            let err_msg = format!("Error fetching monitors: {}", e);
+            set_last_error(err_msg);
+            0
+        }
     }
 }
 
@@ -109,8 +142,20 @@ pub extern "C" fn capture_monitor_width(index: size_t) -> c_uint {
 #[no_mangle]
 pub extern "C" fn capture_monitor_height(index: size_t) -> c_uint {
     match Monitor::all() {
-        Ok(monitors) => monitors.get(index).map_or(0, |m| m.height()),
-        Err(_) => 0,
+        Ok(monitors) => {
+            if let Some(m) = monitors.get(index) {
+                m.height()
+            } else {
+                let err_msg = format!("Monitor index out of bounds: {}", index);
+                set_last_error(err_msg);
+                0
+            }
+        }
+        Err(e) => {
+            let err_msg = format!("Error fetching monitors: {}", e);
+            set_last_error(err_msg);
+            0
+        }
     }
 }
 
@@ -136,16 +181,10 @@ pub extern "C" fn capture_monitor_image(index: size_t) -> CapturedImage {
                     Ok(image) => {
                         let width = image.width();
                         let height = image.height();
-                        // Important: xcap often returns BGRA, Deno/Web expects RGBA.
-                        // We might need to convert BGRa -> RGBA here.
-                        // For now, let's assume it's RGBA or the consumer handles it.
-                        // let rgba_pixels = bgra_to_rgba(image.buffer()); // Custom function needed
-                        // let mut buffer = rgba_pixels.into_boxed_slice();
 
-                        // Assuming image.buffer() is already Vec<u8> in RGBA (check xcap docs/behavior)
-                        // Let's just use the raw buffer for now. If colors are wrong, conversion is needed.
-                        let mut buffer = image.as_bytes().to_vec().into_boxed_slice();
+                        let buffer_data = image.as_bytes().to_vec();
 
+                        let mut buffer = buffer_data.into_boxed_slice();
                         let data = buffer.as_mut_ptr();
                         let len = buffer.len();
 
@@ -160,17 +199,23 @@ pub extern "C" fn capture_monitor_image(index: size_t) -> CapturedImage {
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error capturing image for monitor {}: {}", index, e);
+                        let err_msg = format!("Error capturing image for monitor {}: {}", index, e);
+                        eprintln!("{}", err_msg);
+                        set_last_error(err_msg);
                         empty_image
                     }
                 }
             } else {
-                eprintln!("Invalid monitor index: {}", index);
+                let err_msg = format!("Invalid monitor index: {}", index);
+                eprintln!("{}", err_msg);
+                set_last_error(err_msg);
                 empty_image
             }
         }
         Err(e) => {
-            eprintln!("Error fetching monitors: {}", e);
+            let err_msg = format!("Error fetching monitors: {}", e);
+            eprintln!("{}", err_msg);
+            set_last_error(err_msg);
             empty_image
         }
     }
@@ -199,15 +244,3 @@ pub unsafe extern "C" fn capture_free_image(image: CapturedImage) {
         let _ = Box::from_raw(slice); // Takes ownership and drops when scope ends.
     }
 }
-
-// --- Optional: Helper for BGRA to RGBA conversion if needed ---
-// fn bgra_to_rgba(bgra_buffer: &[u8]) -> Vec<u8> {
-//     let mut rgba_buffer = Vec::with_capacity(bgra_buffer.len());
-//     for chunk in bgra_buffer.chunks_exact(4) {
-//         rgba_buffer.push(chunk[2]); // R
-//         rgba_buffer.push(chunk[1]); // G
-//         rgba_buffer.push(chunk[0]); // B
-//         rgba_buffer.push(chunk[3]); // A
-//     }
-//     rgba_buffer
-// }
