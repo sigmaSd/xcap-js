@@ -66,6 +66,6 @@ jobs:
         if: runner.os == 'Windows'
         uses: svenstaro/upload-release-action@v2
         with:
-          file: src-rust/target/release/xcap.dll
+          file: src-rust/target/release/xcap_c_api.dll
           tag: ${{ github.ref }}
           overwrite: true
