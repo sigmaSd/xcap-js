@@ -37,7 +37,7 @@ jobs:
       - name: Correct MacOS lib name
         if: runner.os == 'MacOS'
         run: |
-          mv src-rust/target/release/libxcap_c_api.dylib libxcap_c_api_$(uname -m).dylib
+          mv target/release/libxcap_c_api.dylib libxcap_c_api_$(uname -m).dylib
 
       - name: Upload MacOS lib
         if: runner.os == 'MacOS'
@@ -51,7 +51,7 @@ jobs:
       - name: Correct linux lib name
         if: runner.os == 'Linux'
         run: |
-          mv src-rust/target/release/libxcap_c_api.so libxcap_c_api_$(uname -m).so
+          mv target/release/libxcap_c_api.so libxcap_c_api_$(uname -m).so
 
       - name: Upload Linux lib
         if: runner.os == 'Linux'
@@ -66,6 +66,6 @@ jobs:
         if: runner.os == 'Windows'
         uses: svenstaro/upload-release-action@v2
         with:
-          file: src-rust/target/release/xcap_c_api.dll
+          file: target/release/xcap_c_api.dll
           tag: ${{ github.ref }}
           overwrite: true
