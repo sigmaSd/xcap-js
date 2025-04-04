@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0",
+  "version": "0.1.10",
   "tasks": {
     "dev": "RUST_LIB_PATH=$CARGO_TARGET_DIR/debug deno -A src-js/mod.ts"
   }
