@@ -1,7 +1,7 @@
 // capture-ffi/src/lib.rs
 use libc::{c_char, c_uint, size_t};
 use std::{cell::RefCell, ffi::CString, ptr, slice};
-use xcap::{image::EncodableLayout, Monitor}; // Added image::Image
+use xcap::{Monitor, image::EncodableLayout}; // Added image::Image
 
 // --- Data Structures for FFI ---
 
@@ -34,7 +34,7 @@ fn set_last_error(err: String) {
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn capture_last_error_message() -> *const c_char {
     LAST_ERROR.with(|cell| cell.borrow().as_ref().map_or(ptr::null(), |s| s.as_ptr()))
 }
@@ -43,7 +43,7 @@ pub extern "C" fn capture_last_error_message() -> *const c_char {
 
 /// Gets the number of connected monitors.
 /// Returns 0 if there's an error fetching the monitors.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn capture_monitor_count() -> size_t {
     match Monitor::all() {
         Ok(monitors) => monitors.len(),
@@ -60,7 +60,7 @@ pub extern "C" fn capture_monitor_count() -> size_t {
 /// Returns a pointer to a null-terminated UTF-8 string.
 /// The caller MUST call capture_free_string() on the returned pointer to free the memory.
 /// Returns NULL if the index is out of bounds or an error occurs.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn capture_monitor_name(index: size_t) -> *mut c_char {
     match Monitor::all() {
         Ok(monitors) => {
@@ -93,7 +93,7 @@ pub extern "C" fn capture_monitor_name(index: size_t) -> *mut c_char {
 /// Gets the platform-specific ID of the monitor at the specified index.
 /// Returns 0 if the index is out of bounds or an error occurs (assuming 0 is not a valid ID).
 /// Note: Monitor IDs might not be stable across reboots or system changes.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn capture_monitor_id(index: size_t) -> c_uint {
     match Monitor::all() {
         Ok(monitors) => {
@@ -116,7 +116,7 @@ pub extern "C" fn capture_monitor_id(index: size_t) -> c_uint {
 
 /// Gets the width of the monitor at the specified index.
 /// Returns 0 if the index is out of bounds or an error occurs.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn capture_monitor_width(index: size_t) -> c_uint {
     match Monitor::all() {
         Ok(monitors) => {
@@ -138,7 +138,7 @@ pub extern "C" fn capture_monitor_width(index: size_t) -> c_uint {
 
 /// Gets the height of the monitor at the specified index.
 /// Returns 0 if the index is out of bounds or an error occurs.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn capture_monitor_height(index: size_t) -> c_uint {
     match Monitor::all() {
         Ok(monitors) => {
@@ -164,7 +164,7 @@ pub extern "C" fn capture_monitor_height(index: size_t) -> c_uint {
 /// Returns a CapturedImage struct containing the image data.
 /// The caller MUST call capture_free_image() on the returned struct to free the data buffer.
 /// Returns a struct with NULL data pointer and zero dimensions if an error occurs or index is invalid.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn capture_monitor_image(index: size_t) -> CapturedImage {
     let empty_image = CapturedImage {
         data: ptr::null_mut(),
@@ -224,22 +224,22 @@ pub extern "C" fn capture_monitor_image(index: size_t) -> CapturedImage {
 
 /// Frees a C string allocated by Rust (e.g., returned by capture_monitor_name).
 /// Call this with the pointer received from Rust functions that return *mut c_char.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn capture_free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
         // Retake ownership of the pointer so CString's Drop implementation runs.
-        let _ = CString::from_raw(ptr);
+        let _ = unsafe { CString::from_raw(ptr) };
     }
 }
 
 /// Frees the image data buffer allocated by Rust (contained within CapturedImage).
 /// Call this with the struct received from capture_monitor_image.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn capture_free_image(image: CapturedImage) {
     if !image.data.is_null() {
         // Reconstruct the Vec<u8> or Box<[u8]> from the raw parts and let it drop.
         // We know len is the original length. Capacity might differ, but from_raw_parts handles this.
-        let slice = slice::from_raw_parts_mut(image.data, image.len);
-        let _ = Box::from_raw(slice); // Takes ownership and drops when scope ends.
+        let slice = unsafe { slice::from_raw_parts_mut(image.data, image.len) };
+        let _ = unsafe { Box::from_raw(slice) }; // Takes ownership and drops when scope ends.
     }
 }
